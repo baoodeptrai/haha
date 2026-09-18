@@ -3,27 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>App Quản Lý Thông Báo Multi-Alarm</title>
+    <title>App Quản Lý Thông Báo</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 16px; max-width: 480px; margin: auto; background: #f0f2f5; color: #333; }
         h2, h3 { margin-top: 0; text-align: center; color: #1a73e8; }
         .card { background: white; padding: 16px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 16px; }
         label { font-weight: 600; display: block; margin-top: 10px; margin-bottom: 4px; font-size: 14px; }
         input, textarea, select, button { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; font-size: 14px; }
-        button.btn-add { background: #1a73e8; color: white; border: none; font-weight: bold; margin-top: 14px; cursor: pointer; }
-        button.btn-add:hover { background: #1557b0; }
+        button.btn-add { background: #1a73e8; color: white; border: none; font-weight: bold; margin-top: 10px; cursor: pointer; }
+        button.btn-test { background: #ff9800; color: white; border: none; font-weight: bold; cursor: pointer; }
         .switch-group { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
         .switch-group input { width: auto; }
-        .alarm-item { background: #f8f9fa; border-left: 4px solid #1a73e8; padding: 12px; border-radius: 6px; margin-bottom: 10px; position: relative; }
+        .alarm-item { background: #f8f9fa; border-left: 4px solid #1a73e8; padding: 12px; border-radius: 6px; margin-bottom: 10px; }
         .alarm-time { font-size: 20px; font-weight: bold; color: #1a73e8; }
         .alarm-desc { font-size: 13px; color: #666; margin-top: 4px; }
-        .alarm-actions { display: flex; gap: 8px; margin-top: 8px; }
-        .btn-del { background: #dc3545; color: white; border: none; padding: 6px 12px; border-radius: 6px; width: auto; font-size: 12px; cursor: pointer; }
+        .btn-del { background: #dc3545; color: white; border: none; padding: 6px 12px; border-radius: 6px; width: auto; font-size: 12px; cursor: pointer; margin-top: 8px; }
     </style>
 </head>
 <body>
 
     <h2>Quản Lý Thông Báo</h2>
+
+    <div class="card">
+        <button class="btn-test" onclick="testNotificationNow()">⚡ BẤM TEST THÔNG BÁO NGAY</button>
+    </div>
 
     <div class="card">
         <h3>+ Thêm Thông Báo Mới</h3>
@@ -73,34 +76,30 @@
     <script>
         let alarms = [];
         let customAudioData = null;
-        let swRegistration = null;
+        let swReg = null;
 
-        // Đăng ký Service Worker chuẩn để hiện Banner trên Android/iOS
+        // Đăng ký Service Worker từ file sw.js độc lập
         if ('serviceWorker' in navigator) {
-            const swCode = `
-                self.addEventListener('install', e => self.skipWaiting());
-                self.addEventListener('activate', e => e.waitUntil(clients.claim()));
-            `;
-            const blob = new Blob([swCode], { type: 'application/javascript' });
-            const swUrl = URL.createObjectURL(blob);
-
-            navigator.serviceWorker.register(swUrl).then(reg => {
-                swRegistration = reg;
-            }).catch(err => console.log('SW Error:', err));
+            navigator.serviceWorker.register('sw.js').then(reg => {
+                swReg = reg;
+                console.log('Service Worker đăng ký thành công!');
+            }).catch(err => {
+                console.error('Lỗi đăng ký Service Worker:', err);
+            });
         }
 
-        // Xin quyền gửi thông báo
-        if ("Notification" in window && Notification.permission !== "granted") {
-            Notification.requestPermission();
+        // Xin quyền ngay khi người dùng thao tác trên trang
+        function requestNotifyPermission() {
+            if ("Notification" in window && Notification.permission !== "granted") {
+                Notification.requestPermission();
+            }
         }
 
         document.getElementById('audioFile').addEventListener('change', function(e) {
             const file = e.target.files[0];
             if (file) {
                 const reader = new FileReader();
-                reader.onload = function(evt) {
-                    customAudioData = evt.target.result;
-                };
+                reader.onload = function(evt) { customAudioData = evt.target.result; };
                 reader.readAsDataURL(file);
             }
         });
@@ -118,8 +117,7 @@
 
         function playSound(soundType, customAudio) {
             if (soundType === 'custom' && customAudio) {
-                const audio = new Audio(customAudio);
-                audio.play().catch(e => console.log(e));
+                new Audio(customAudio).play().catch(e=>console.log(e));
             } else {
                 const ctx = new (window.AudioContext || window.webkitAudioContext)();
                 const osc = ctx.createOscillator();
@@ -131,26 +129,37 @@
             }
         }
 
-        function showBannerNotification(title, message) {
+        function triggerNotify(title, body) {
+            requestNotifyPermission();
+
             if (Notification.permission === "granted") {
-                // Ưu tiên dùng Service Worker để nổ banner kể cả khi tắt màn hình
-                if (swRegistration && swRegistration.showNotification) {
-                    swRegistration.showNotification(title, {
-                        body: message,
-                        icon: "https://cdn-icons-png.flaticon.com/512/3602/3602145.png",
-                        vibrate: [300, 100, 300],
-                        requireInteraction: true // Giữ thông báo trên màn hình cho đến khi bấm vào
+                // Đẩy thông báo qua Service Worker để nổ banner chuẩn
+                if (navigator.serviceWorker.controller) {
+                    navigator.serviceWorker.controller.postMessage({
+                        type: 'SHOW_NOTIFICATION',
+                        title: title,
+                        body: body
+                    });
+                } else if (swReg && swReg.showNotification) {
+                    swReg.showNotification(title, {
+                        body: body,
+                        icon: "https://cdn-icons-png.flaticon.com/512/3602/3602145.png"
                     });
                 } else {
-                    new Notification(title, { body: message });
+                    new Notification(title, { body: body });
                 }
+            } else {
+                alert("Thông báo bị chặn! Hãy vào Cài đặt trình duyệt để bấm 'Cho phép'.");
             }
         }
 
+        function testNotificationNow() {
+            playSound('bell', null);
+            triggerNotify("⏰ TEST THÔNG BÁO", "Banner đã hiển thị thành công trên hệ thống!");
+        }
+
         function addAlarm() {
-            if (Notification.permission !== "granted") {
-                Notification.requestPermission();
-            }
+            requestNotifyPermission();
 
             const time = document.getElementById('timePicker').value;
             if (!time) return alert("Vui lòng chọn giờ!");
@@ -161,10 +170,10 @@
             const soundSelect = document.getElementById('soundSelect').value;
 
             if (soundSelect === 'custom' && !customAudioData) {
-                return alert("Vui lòng chọn file nhạc MP3 từ thiết bị!");
+                return alert("Vui lòng chọn file nhạc MP3!");
             }
 
-            const alarm = {
+            alarms.push({
                 id: Date.now(),
                 time: time,
                 isRandom: isRandom,
@@ -173,9 +182,8 @@
                 soundType: soundSelect,
                 customAudio: soundSelect === 'custom' ? customAudioData : null,
                 lastTriggered: null
-            };
+            });
 
-            alarms.push(alarm);
             renderAlarms();
             alert(`Đã thêm thông báo lúc ${time}`);
         }
@@ -192,26 +200,15 @@
                 return;
             }
 
-            container.innerHTML = alarms.map(a => {
-                const contentStr = a.isRandom 
-                    ? `🎲 Ngẫu nhiên (${a.randomList.length} câu)` 
-                    : `📌 Cố định: "${a.fixedMsg}"`;
-                const soundStr = a.soundType === 'custom' ? '🎵 Nhạc MP3 riêng' : '🔔 Nhạc hệ thống';
-
-                return `
-                    <div class="alarm-item">
-                        <div class="alarm-time">⏰ ${a.time}</div>
-                        <div class="alarm-desc">${contentStr}</div>
-                        <div class="alarm-desc">${soundStr}</div>
-                        <div class="alarm-actions">
-                            <button class="btn-del" onclick="deleteAlarm(${a.id})">Xóa bỏ</button>
-                        </div>
-                    </div>
-                `;
-            }).join('');
+            container.innerHTML = alarms.map(a => `
+                <div class="alarm-item">
+                    <div class="alarm-time">⏰ ${a.time}</div>
+                    <div class="alarm-desc">${a.isRandom ? `🎲 Ngẫu nhiên (${a.randomList.length} câu)` : `📌 ${a.fixedMsg}`}</div>
+                    <button class="btn-del" onclick="deleteAlarm(${a.id})">Xóa bỏ</button>
+                </div>
+            `).join('');
         }
 
-        // Kiểm tra thông báo mỗi 5 giây
         setInterval(() => {
             const now = new Date();
             const currentHM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -220,14 +217,12 @@
             alarms.forEach(a => {
                 if (a.time === currentHM && a.lastTriggered !== todayStr) {
                     a.lastTriggered = todayStr;
-
-                    let msg = a.fixedMsg;
-                    if (a.isRandom && a.randomList.length > 0) {
-                        msg = a.randomList[Math.floor(Math.random() * a.randomList.length)];
-                    }
+                    let msg = a.isRandom && a.randomList.length > 0 
+                        ? a.randomList[Math.floor(Math.random() * a.randomList.length)] 
+                        : a.fixedMsg;
 
                     playSound(a.soundType, a.customAudio);
-                    showBannerNotification("⏰ THÔNG BÁO HỆ THỐNG", msg);
+                    triggerNotify("⏰ THÔNG BÁO HẸN GIỜ", msg);
                 }
             });
         }, 5000);
