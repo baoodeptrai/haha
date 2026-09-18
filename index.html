@@ -14,8 +14,6 @@
         button.btn-add:hover { background: #1557b0; }
         .switch-group { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
         .switch-group input { width: auto; }
-        
-        /* Danh sách thông báo */
         .alarm-item { background: #f8f9fa; border-left: 4px solid #1a73e8; padding: 12px; border-radius: 6px; margin-bottom: 10px; position: relative; }
         .alarm-time { font-size: 20px; font-weight: bold; color: #1a73e8; }
         .alarm-desc { font-size: 13px; color: #666; margin-top: 4px; }
@@ -27,7 +25,6 @@
 
     <h2>Quản Lý Thông Báo</h2>
 
-    <!-- Form Thêm Thông Báo Mới -->
     <div class="card">
         <h3>+ Thêm Thông Báo Mới</h3>
         
@@ -66,7 +63,6 @@
         <button class="btn-add" onclick="addAlarm()">THÊM THÔNG BÁO NÀY</button>
     </div>
 
-    <!-- Danh Sách Đã Thêm -->
     <div class="card">
         <h3>Danh Sách Thông Báo Đã Đặt</h3>
         <div id="alarmListContainer">
@@ -77,13 +73,27 @@
     <script>
         let alarms = [];
         let customAudioData = null;
+        let swRegistration = null;
 
-        // Xin quyền phát thông báo trên trình duyệt
-        if ("Notification" in window) {
+        // Đăng ký Service Worker chuẩn để hiện Banner trên Android/iOS
+        if ('serviceWorker' in navigator) {
+            const swCode = `
+                self.addEventListener('install', e => self.skipWaiting());
+                self.addEventListener('activate', e => e.waitUntil(clients.claim()));
+            `;
+            const blob = new Blob([swCode], { type: 'application/javascript' });
+            const swUrl = URL.createObjectURL(blob);
+
+            navigator.serviceWorker.register(swUrl).then(reg => {
+                swRegistration = reg;
+            }).catch(err => console.log('SW Error:', err));
+        }
+
+        // Xin quyền gửi thông báo
+        if ("Notification" in window && Notification.permission !== "granted") {
             Notification.requestPermission();
         }
 
-        // Đọc file nhạc mp3 khi người dùng chọn
         document.getElementById('audioFile').addEventListener('change', function(e) {
             const file = e.target.files[0];
             if (file) {
@@ -109,7 +119,7 @@
         function playSound(soundType, customAudio) {
             if (soundType === 'custom' && customAudio) {
                 const audio = new Audio(customAudio);
-                audio.play();
+                audio.play().catch(e => console.log(e));
             } else {
                 const ctx = new (window.AudioContext || window.webkitAudioContext)();
                 const osc = ctx.createOscillator();
@@ -121,7 +131,27 @@
             }
         }
 
+        function showBannerNotification(title, message) {
+            if (Notification.permission === "granted") {
+                // Ưu tiên dùng Service Worker để nổ banner kể cả khi tắt màn hình
+                if (swRegistration && swRegistration.showNotification) {
+                    swRegistration.showNotification(title, {
+                        body: message,
+                        icon: "https://cdn-icons-png.flaticon.com/512/3602/3602145.png",
+                        vibrate: [300, 100, 300],
+                        requireInteraction: true // Giữ thông báo trên màn hình cho đến khi bấm vào
+                    });
+                } else {
+                    new Notification(title, { body: message });
+                }
+            }
+        }
+
         function addAlarm() {
+            if (Notification.permission !== "granted") {
+                Notification.requestPermission();
+            }
+
             const time = document.getElementById('timePicker').value;
             if (!time) return alert("Vui lòng chọn giờ!");
 
@@ -147,7 +177,7 @@
 
             alarms.push(alarm);
             renderAlarms();
-            alert(`Đã thêm thông báo mới lúc ${time}`);
+            alert(`Đã thêm thông báo lúc ${time}`);
         }
 
         function deleteAlarm(id) {
@@ -181,7 +211,7 @@
             }).join('');
         }
 
-        // Vòng lặp tự động quét kiểm tra thông báo mỗi 10 giây
+        // Kiểm tra thông báo mỗi 5 giây
         setInterval(() => {
             const now = new Date();
             const currentHM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -189,7 +219,7 @@
 
             alarms.forEach(a => {
                 if (a.time === currentHM && a.lastTriggered !== todayStr) {
-                    a.lastTriggered = todayStr; // Đánh dấu đã phát hôm nay
+                    a.lastTriggered = todayStr;
 
                     let msg = a.fixedMsg;
                     if (a.isRandom && a.randomList.length > 0) {
@@ -197,15 +227,10 @@
                     }
 
                     playSound(a.soundType, a.customAudio);
-
-                    if (Notification.permission === "granted") {
-                        new Notification("Thông báo hẹn giờ", { body: msg });
-                    } else {
-                        alert("THÔNG BÁO [" + a.time + "]: " + msg);
-                    }
+                    showBannerNotification("⏰ THÔNG BÁO HỆ THỐNG", msg);
                 }
             });
-        }, 10000);
+        }, 5000);
     </script>
 </body>
 </html>
