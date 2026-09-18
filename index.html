@@ -3,28 +3,39 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>App Thông Báo Hàng Ngày</title>
+    <title>App Quản Lý Thông Báo Multi-Alarm</title>
     <style>
-        body { font-family: Arial, sans-serif; padding: 20px; max-width: 400px; margin: auto; background: #f4f6f8; }
-        .card { background: white; padding: 16px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 16px; }
-        label { font-weight: bold; display: block; margin-bottom: 8px; }
-        input, textarea, select, button { width: 100%; padding: 10px; margin-bottom: 12px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
-        button.btn-set { background: #28a745; color: white; border: none; font-weight: bold; cursor: pointer; }
-        button.btn-cancel { background: #dc3545; color: white; border: none; font-weight: bold; cursor: pointer; }
-        .switch-group { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 16px; max-width: 480px; margin: auto; background: #f0f2f5; color: #333; }
+        h2, h3 { margin-top: 0; text-align: center; color: #1a73e8; }
+        .card { background: white; padding: 16px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 16px; }
+        label { font-weight: 600; display: block; margin-top: 10px; margin-bottom: 4px; font-size: 14px; }
+        input, textarea, select, button { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; font-size: 14px; }
+        button.btn-add { background: #1a73e8; color: white; border: none; font-weight: bold; margin-top: 14px; cursor: pointer; }
+        button.btn-add:hover { background: #1557b0; }
+        .switch-group { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
         .switch-group input { width: auto; }
+        
+        /* Danh sách thông báo */
+        .alarm-item { background: #f8f9fa; border-left: 4px solid #1a73e8; padding: 12px; border-radius: 6px; margin-bottom: 10px; position: relative; }
+        .alarm-time { font-size: 20px; font-weight: bold; color: #1a73e8; }
+        .alarm-desc { font-size: 13px; color: #666; margin-top: 4px; }
+        .alarm-actions { display: flex; gap: 8px; margin-top: 8px; }
+        .btn-del { background: #dc3545; color: white; border: none; padding: 6px 12px; border-radius: 6px; width: auto; font-size: 12px; cursor: pointer; }
     </style>
 </head>
 <body>
 
-    <h2>Cài Đặt Thông Báo</h2>
+    <h2>Quản Lý Thông Báo</h2>
 
+    <!-- Form Thêm Thông Báo Mới -->
     <div class="card">
-        <label for="timePicker">Chọn giờ thông báo:</label>
+        <h3>+ Thêm Thông Báo Mới</h3>
+        
+        <label for="timePicker">Chọn giờ báo:</label>
         <input type="time" id="timePicker" value="08:00">
 
         <div class="switch-group">
-            <span>Bật Random nội dung:</span>
+            <span>Bật Chế độ Random câu:</span>
             <input type="checkbox" id="isRandom" onchange="toggleMode()">
         </div>
 
@@ -34,24 +45,55 @@
         </div>
 
         <div id="randomGroup" style="display: none;">
-            <label for="randomList">Danh sách câu (Mỗi câu 1 dòng):</label>
-            <textarea id="randomList" rows="4">Uống 1 ly nước!
+            <label for="randomList">Danh sách câu ngẫu nhiên (mỗi câu 1 dòng):</label>
+            <textarea id="randomList" rows="3">Uống 1 ly nước!
 Đứng dậy vươn vai!
-Đọc 1 trang sách!</textarea>
+Đọc sách 15 phút!</textarea>
         </div>
 
-        <label for="soundSelect">Âm thanh thông báo:</label>
-        <select id="soundSelect">
-            <option value="beep">Tiếng Bíp nhẹ</option>
-            <option value="bell">Tiếng Chuông</option>
+        <label for="soundSelect">Chọn Nhạc Chuông:</label>
+        <select id="soundSelect" onchange="toggleCustomSound()">
+            <option value="beep">Tiếng Bíp Hệ Thống</option>
+            <option value="bell">Tiếng Chuông Báo Thức</option>
+            <option value="custom">Tải nhạc MP3 từ máy/điện thoại...</option>
         </select>
 
-        <button class="btn-set" onclick="setNotification()">ĐẶT THÔNG BÁO</button>
-        <button class="btn-cancel" onclick="cancelNotification()">HỦY THÔNG BÁO</button>
+        <div id="customSoundGroup" style="display: none;">
+            <label for="audioFile">Chọn file nhạc (.mp3, .wav):</label>
+            <input type="file" id="audioFile" accept="audio/*">
+        </div>
+
+        <button class="btn-add" onclick="addAlarm()">THÊM THÔNG BÁO NÀY</button>
+    </div>
+
+    <!-- Danh Sách Đã Thêm -->
+    <div class="card">
+        <h3>Danh Sách Thông Báo Đã Đặt</h3>
+        <div id="alarmListContainer">
+            <p style="text-align: center; color: #888;">Chưa có thông báo nào được tạo.</p>
+        </div>
     </div>
 
     <script>
-        let timerId = null;
+        let alarms = [];
+        let customAudioData = null;
+
+        // Xin quyền phát thông báo trên trình duyệt
+        if ("Notification" in window) {
+            Notification.requestPermission();
+        }
+
+        // Đọc file nhạc mp3 khi người dùng chọn
+        document.getElementById('audioFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(evt) {
+                    customAudioData = evt.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+        });
 
         function toggleMode() {
             const isRandom = document.getElementById('isRandom').checked;
@@ -59,69 +101,111 @@
             document.getElementById('randomGroup').style.display = isRandom ? 'block' : 'none';
         }
 
-        // Xin quyền phát thông báo trên trình duyệt
-        if ("Notification" in window) {
-            Notification.requestPermission();
+        function toggleCustomSound() {
+            const soundChoice = document.getElementById('soundSelect').value;
+            document.getElementById('customSoundGroup').style.display = (soundChoice === 'custom') ? 'block' : 'none';
         }
 
-        function playSound(type) {
-            const ctx = new (window.AudioContext || window.webkitAudioContext)();
-            const osc = ctx.createOscillator();
-            osc.type = type === 'bell' ? 'triangle' : 'sine';
-            osc.frequency.setValueAtTime(type === 'bell' ? 587.33 : 440, ctx.currentTime);
-            osc.connect(ctx.destination);
-            osc.start();
-            osc.stop(ctx.currentTime + 0.5);
+        function playSound(soundType, customAudio) {
+            if (soundType === 'custom' && customAudio) {
+                const audio = new Audio(customAudio);
+                audio.play();
+            } else {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                osc.type = soundType === 'bell' ? 'triangle' : 'sine';
+                osc.frequency.setValueAtTime(soundType === 'bell' ? 587.33 : 440, ctx.currentTime);
+                osc.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 1);
+            }
         }
 
-        function triggerNotification() {
+        function addAlarm() {
+            const time = document.getElementById('timePicker').value;
+            if (!time) return alert("Vui lòng chọn giờ!");
+
             const isRandom = document.getElementById('isRandom').checked;
-            let message = "";
+            const fixedMsg = document.getElementById('fixedMsg').value;
+            const randomList = document.getElementById('randomList').value;
+            const soundSelect = document.getElementById('soundSelect').value;
 
-            if (isRandom) {
-                const list = document.getElementById('randomList').value.split('\n').filter(s => s.trim() !== "");
-                message = list.length > 0 ? list[Math.floor(Math.random() * list.length)] : "Thông báo ngẫu nhiên!";
-            } else {
-                message = document.getElementById('fixedMsg').value || "Thông báo cố định!";
+            if (soundSelect === 'custom' && !customAudioData) {
+                return alert("Vui lòng chọn file nhạc MP3 từ thiết bị!");
             }
 
-            const soundType = document.getElementById('soundSelect').value;
-            playSound(soundType);
+            const alarm = {
+                id: Date.now(),
+                time: time,
+                isRandom: isRandom,
+                fixedMsg: fixedMsg || "Thông báo!",
+                randomList: randomList.split('\n').filter(s => s.trim() !== ""),
+                soundType: soundSelect,
+                customAudio: soundSelect === 'custom' ? customAudioData : null,
+                lastTriggered: null
+            };
 
-            if (Notification.permission === "granted") {
-                new Notification("Thông báo hàng ngày", { body: message });
-            } else {
-                alert("THÔNG BÁO: " + message);
-            }
+            alarms.push(alarm);
+            renderAlarms();
+            alert(`Đã thêm thông báo mới lúc ${time}`);
         }
 
-        function setNotification() {
-            if (Notification.permission !== "granted") {
-                Notification.requestPermission();
+        function deleteAlarm(id) {
+            alarms = alarms.filter(a => a.id !== id);
+            renderAlarms();
+        }
+
+        function renderAlarms() {
+            const container = document.getElementById('alarmListContainer');
+            if (alarms.length === 0) {
+                container.innerHTML = '<p style="text-align: center; color: #888;">Chưa có thông báo nào được tạo.</p>';
+                return;
             }
 
-            const timeValue = document.getElementById('timePicker').value;
-            if (!timeValue) return alert("Vui lòng chọn giờ!");
+            container.innerHTML = alarms.map(a => {
+                const contentStr = a.isRandom 
+                    ? `🎲 Ngẫu nhiên (${a.randomList.length} câu)` 
+                    : `📌 Cố định: "${a.fixedMsg}"`;
+                const soundStr = a.soundType === 'custom' ? '🎵 Nhạc MP3 riêng' : '🔔 Nhạc hệ thống';
 
-            const [hours, minutes] = timeValue.split(':').map(Number);
-            
-            if (timerId) clearInterval(timerId);
+                return `
+                    <div class="alarm-item">
+                        <div class="alarm-time">⏰ ${a.time}</div>
+                        <div class="alarm-desc">${contentStr}</div>
+                        <div class="alarm-desc">${soundStr}</div>
+                        <div class="alarm-actions">
+                            <button class="btn-del" onclick="deleteAlarm(${a.id})">Xóa bỏ</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
 
-            // Kiểm tra mỗi 30 giây để phát thông báo đúng giờ
-            timerId = setInterval(() => {
-                const now = new Date();
-                if (now.getHours() === hours && now.getMinutes() === minutes && now.getSeconds() < 30) {
-                    triggerNotification();
+        // Vòng lặp tự động quét kiểm tra thông báo mỗi 10 giây
+        setInterval(() => {
+            const now = new Date();
+            const currentHM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+            const todayStr = now.toDateString();
+
+            alarms.forEach(a => {
+                if (a.time === currentHM && a.lastTriggered !== todayStr) {
+                    a.lastTriggered = todayStr; // Đánh dấu đã phát hôm nay
+
+                    let msg = a.fixedMsg;
+                    if (a.isRandom && a.randomList.length > 0) {
+                        msg = a.randomList[Math.floor(Math.random() * a.randomList.length)];
+                    }
+
+                    playSound(a.soundType, a.customAudio);
+
+                    if (Notification.permission === "granted") {
+                        new Notification("Thông báo hẹn giờ", { body: msg });
+                    } else {
+                        alert("THÔNG BÁO [" + a.time + "]: " + msg);
+                    }
                 }
-            }, 30000);
-
-            alert(`Đã đặt thông báo lúc ${timeValue} (Lặp lại hàng ngày trên trang này)`);
-        }
-
-        function cancelNotification() {
-            if (timerId) clearInterval(timerId);
-            alert("Đã hủy thông báo!");
-        }
+            });
+        }, 10000);
     </script>
 </body>
 </html>
